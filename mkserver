@@ -1,0 +1,75 @@
+#!/bin/bash
+# -----------------------------------------
+# - Gestionnaire de certifications        -
+# - (c) Libre En Poche                    -
+# - Licence GPL-v3 (voir fichier licence) -
+# -----------------------------------------
+
+. ./functions.inc
+
+loadConfig
+echoName
+
+function usage () {
+    echo -e "usage : $0 subdomain servername\n"
+    exit 1
+}
+
+if [ $# -ne 2 ]
+then
+    usage
+    exit 1
+fi
+
+SUBDOMAIN=$1
+SVR=$2
+OUSD=subdomain-${SUBDOMAIN}
+OU=server-${SUBDOMAIN}-${SVR}
+SUBDIR=${SUBDOMAINSCRTDIR}/$1
+
+testRootCert
+testSubdomainCert ${SUBDOMAIN}
+testIfCertSubRevoked ${SUBDOMAIN}
+
+if [ -f "${SUBDIR}/certs/${OU}.pem" ]
+then
+    echo -e "\nLe certificat existe deja (eventuellement revoque). Abandon.\n"
+    exit 1
+fi
+
+echo -e "\nGeneration du certificat serveur..."
+
+echo "** Generation du certificat..."
+
+openssl req \
+    -config ${SUBDIR}/openssl.conf \
+    -passin file:${ROOTCRTDIR}/.passwd \
+    -passout file:${ROOTCRTDIR}/.passwd \
+    -batch \
+    -new \
+    -newkey rsa:2048 \
+    -extensions SERVER_SSL \
+    -keyout ${SUBDIR}/private/${OU}.key \
+    -out ${SUBDIR}/req/${OU}.req \
+    -subj "${DN}${OUSD}/CN=${OU}" \
+    > ${LOGSDIR}/${OU}.log 2>&1
+
+echo "** Signature du certificat..."
+
+openssl ca \
+    -config ${SUBDIR}/openssl.conf \
+    -passin file:${ROOTCRTDIR}/.passwd \
+    -batch \
+    -name core_ca \
+    -extensions SERVER_SSL \
+    -subj "${DN}${OUSD}/CN=${OU}" \
+    -out ${SUBDIR}/certs/${OU}.pem \
+    -in ${SUBDIR}/req/${OU}.req \
+    > ${ROOT}/logs/${OU}.log 2>&1
+
+openssl x509 \
+    -in ${SUBDIR}/certs/${OU}.pem \
+    -out ${SUBDIR}/certs/${OU}.crt
+
+echo -e "Le certificat serveur est pret.\n\nLe certificat se trouve dans ${SUBDIR}/certs/${OU}.pem.\n"
+

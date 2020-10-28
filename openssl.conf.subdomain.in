@@ -1,0 +1,137 @@
+# -----------------------------------------
+# - Gestionnaire de certifications        -
+# - (c) Libre En Poche                    -
+# - Licence GPL-v3 (voir fichier licence) -
+# -----------------------------------------
+
+openssl_conf = default_conf
+
+[ ca ]
+default_ca      = root_ca
+
+[ root_ca ]
+dir             = <ROOT>
+certs           = $dir/certs
+new_certs_dir   = $dir/newcerts
+database        = $dir/index.txt
+certificate     = $dir/certs/root_ca.pem
+serial          = $dir/serial
+private_key     = $dir/private/root_ca.key
+default_days    = 3650
+default_md      = sha256
+preserve        = no
+policy          = policy_match
+crl             = $dir/revoked.crl
+crlnumber       = $dir/crlnumber
+
+[ core_ca ]
+dir             = <SUBROOT>
+certs           = $dir/certs  
+new_certs_dir   = $dir/newcerts
+database        = $dir/index.txt
+certificate     = $dir/certs/<ORGAUNIT>.pem 
+serial          = $dir/serial
+private_key     = $dir/private/<ORGAUNIT>.key
+default_days    = 3650
+default_md      = sha256
+preserve        = no  
+policy          = policy_match
+crl             = $dir/revoked.crl
+crlnumber       = $dir/crlnumber
+
+[ policy_match ]
+countryName             = match
+stateOrProvinceName     = match
+localityName		    = match
+organizationName        = match
+organizationalUnitName  = optional
+commonName              = supplied
+emailAddress            = optional
+
+[ policy_anything ]
+countryName             = optional
+stateOrProvinceName     = optional
+localityName            = optional
+organizationName        = optional
+organizationalUnitName  = optional
+commonName              = supplied
+emailAddress            = optional
+
+[ req ]
+default_bits            = 4096
+distinguished_name      = req_distinguished_name
+string_mask             = utf8only
+
+[ req_distinguished_name ]
+countryName                     = Country Name (2 letter code)
+countryName_min                 = 2
+countryName_max                 = 2
+stateOrProvinceName             = State or Province Name (full name)
+localityName                    = Locality Name (eg, city)
+0.organizationName              = Organization Name (eg, company)
+organizationalUnitName          = Organizational Unit Name (eg, section)
+commonName                      = Common Name (eg, your website’s domain name)
+commonName_max                  = 64
+emailAddress                    = Email Address
+emailAddress_max                = 64
+emailAddress_default            = <ROOTMAIL>
+countryName_default             = <COUNTRY>
+stateOrProvinceName_default     = <STATE>
+localityName_default            = <CITY>
+0.organizationName_default      = <ORGA>
+organizationalUnitName_default  = <ORGAUNIT>
+
+[ req_attributes ]
+challengePassword     = A challenge password
+challengePassword_min = 4
+challengePassword_max = 20
+unstructuredName      = An optional company name
+
+[default_conf]
+ssl_conf = ssl_sect
+
+[ssl_sect]
+system_default = system_default_sect
+
+[system_default_sect]
+MinProtocol = TLSv1.2
+CipherString = DEFAULT@SECLEVEL=2
+
+[ROOT_CA]
+nsComment                       = "ROOT CA"
+subjectKeyIdentifier            = hash
+authorityKeyIdentifier          = keyid,issuer:always
+basicConstraints                = critical,CA:TRUE,pathlen:1
+keyUsage                        = keyCertSign, cRLSign
+
+[CORE_CA]
+nsComment                       = "SSL CA"
+basicConstraints                = critical,CA:TRUE,pathlen:0
+subjectKeyIdentifier            = hash
+authorityKeyIdentifier          = keyid,issuer:always
+issuerAltName                   = issuer:copy
+keyUsage                        = keyCertSign, cRLSign
+nsCertType                      = sslCA
+
+[SERVER_SSL]
+nsComment                       = "SSL Server Certificate"
+subjectKeyIdentifier            = hash
+authorityKeyIdentifier          = keyid,issuer:always
+issuerAltName                   = issuer:copy
+subjectAltName                  = DNS:<ROOTDOMAIN>,DNS:*.<ROOTDOMAIN>
+basicConstraints                = critical,CA:FALSE
+keyUsage                        = critical, digitalSignature, nonRepudiation, keyEncipherment
+nsCertType                      = server
+extendedKeyUsage                = serverAuth
+
+[CLIENT_SSL]
+nsComment                       = "SSL Client Certificate"
+subjectKeyIdentifier            = hash
+authorityKeyIdentifier          = keyid,issuer:always
+issuerAltName                   = issuer:copy
+subjectAltName                  = critical,email:copy,email:<ROOTMAIL>
+basicConstraints                = critical,CA:FALSE
+keyUsage                        = critical,digitalSignature, nonRepudiation
+nsCertType                      = client
+extendedKeyUsage                = clientAuth
+

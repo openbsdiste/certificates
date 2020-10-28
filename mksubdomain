@@ -1,0 +1,118 @@
+#!/bin/bash
+# -----------------------------------------
+# - Gestionnaire de certifications        -
+# - (c) Libre En Poche                    -
+# - Licence GPL-v3 (voir fichier licence) -
+# -----------------------------------------
+
+. ./functions.inc
+
+loadConfig
+echoName
+
+function usage () {
+    echo -e "usage : $0 subdomain\n"
+    exit 1
+}
+ 
+if [ $# -ne 1 ]
+then
+    usage
+    exit 1
+fi
+
+SUBDOMAIN=$1
+OU=subdomain-${SUBDOMAIN}
+SUBDIR=${SUBDOMAINSCRTDIR}/$1
+
+testRootCert
+
+if [ -d ${SUBDIR} ]
+then
+    echo -e "\nIl semble que le sous-domaine ${SUBDOMAIN} existe deja... Abandon.\n"
+    exit 1
+fi
+
+echo -e "\nCreation de la structure du sous-domaine ${SUBDOMAIN}..."
+
+echo "** Preparation de l'environnement..."
+mkdir -p ${SUBDIR}/{certs,req,newcerts,private}
+touch ${SUBDIR}/index.txt
+echo '01' > ${SUBDIR}/crlnumber
+chmod 600 ${SUBDIR}/private
+
+cp openssl.conf.subdomain.in ${SUBDIR}/openssl.conf
+sed -i "s#<ROOT>#${ROOTCRTDIR}#g" ${SUBDIR}/openssl.conf
+sed -i "s#<SUBROOT>#${SUBDIR}#g" ${SUBDIR}/openssl.conf
+sed -i "s/<ROOTDOMAIN>/${ROOTDOMAIN}/g" ${SUBDIR}/openssl.conf
+sed -i "s/<ROOTMAIL>/${ROOTMAIL}/g" ${SUBDIR}/openssl.conf
+sed -i "s/<COUNTRY>/${COUNTRY}/g" ${SUBDIR}/openssl.conf
+sed -i "s/<STATE>/${STATE}/g" ${SUBDIR}/openssl.conf
+sed -i "s/<CITY>/${CITY}/g" ${SUBDIR}/openssl.conf
+sed -i "s/<ORGA>/${ORGA}/g" ${SUBDIR}/openssl.conf
+sed -i "s/<ORGAUNIT>/${OU}/g" ${SUBDIR}/openssl.conf
+
+echo "** Creation du certificat intermediaire pour le sous-domaine..."
+
+openssl req \
+    -config ${SUBDIR}/openssl.conf \
+    -passin file:${ROOTCRTDIR}/.passwd \
+    -passout file:${ROOTCRTDIR}/.passwd \
+    -batch \
+    -newkey rsa:4096 \
+    -sha256 \
+    -extensions CORE_CA \
+    -keyout ${SUBDIR}/private/${OU}.key \
+    -out ${SUBDIR}/req/${OU}.req \
+    -subj "${DN}${OU}/CN=${OU}" \
+    > ${LOGSDIR}/${OU}.log 2>&1
+
+echo "** Signature du certificat..."
+
+openssl ca \
+    -config ${SUBDIR}/openssl.conf \
+    -passin file:${ROOTCRTDIR}/.passwd \
+    -batch \
+    -extensions CORE_CA \
+    -in ${SUBDIR}/req/${OU}.req \
+    -out ${SUBDIR}/certs/${OU}.pem \
+    -days 3650 \
+    -subj "${DN}${OU}/CN=${OU}" \
+     >> ${LOGSDIR}/${OU}.log 2>&1
+
+openssl x509 \
+    -serial \
+    -noout \
+    -in ${SUBDIR}/certs/${OU}.pem \
+    | cut -d= -f2 > ${SUBDIR}/serial
+
+openssl x509 \
+    -in ${SUBDIR}/certs/${OU}.pem \
+    -out ${SUBDIR}/certs/${OU}.crt
+
+echo "** Creation du certificat de revocation..."
+
+openssl ca \
+    -config ${SUBDIR}/openssl.conf \
+    -passin file:${ROOTCRTDIR}/.passwd \
+    -name core_ca \
+    -gencrl \
+    -keyfile ${SUBDIR}/private/${OU}.key \
+    -cert ${SUBDIR}/certs/${OU}.pem \
+    -crldays 3650 \
+    -out ${SUBDIR}/revoked.crl \
+    > /dev/null 2>&1
+
+echo "** Creation de l'autorite de certification pour nginx..."
+cat ${SUBDIR}/certs/${OU}.pem >> ${TRUSTEDANDCRLDIR}/trusted.pem
+cp ${ROOTCRTDIR}/revoked.crl ${TRUSTEDANDCRLDIR}/${SUBDOMAIN}.crl
+cat ${SUBDIR}/revoked.crl >> ${TRUSTEDANDCRLDIR}/${SUBDOMAIN}.crl
+cp ${SUBDIR}/certs/${OU}.crt ${TRUSTEDANDCRLDIR}/${SUBDOMAIN}.crt
+chmod 600 ${TRUSTEDANDCRLDIR}/${SUBDOMAIN}.crl
+chmod 600 ${TRUSTEDANDCRLDIR}/${SUBDOMAIN}.crt
+
+echo -e "Fin de creation de la certification.\nConfiguration NGINX :"
+echo "    ssl_trusted_certificate ${TRUSTEDANDCRLDIR}/trusted.pem;"
+echo "    ssl_client_certificate ${TRUSTEDANDCRLDIR}/${SUBDOMAIN}.crt;"
+echo -e "    ssl_crl ${TRUSTEDANDCRLDIR}/${SUBDOMAIN}.crl;\n"
+

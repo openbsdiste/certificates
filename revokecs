@@ -1,0 +1,79 @@
+#!/bin/bash
+# -----------------------------------------
+# - Gestionnaire de certifications        -
+# - (c) Libre En Poche                    -
+# - Licence GPL-v3 (voir fichier licence) -
+# -----------------------------------------
+
+. ./functions.inc
+
+loadConfig
+echoName
+
+function usage () {
+    echo -e "$0 server|client subdomain [mane]\n"
+    exit 1
+}
+
+if [ $# -ne 3 ]
+then
+    usage
+fi
+
+TYP=$1
+SUBDOMAIN=$2
+NAME=$3
+SUBDIR=${SUBDOMAINSCRTDIR}/${SUBDOMAIN}
+OUSD=subdomain-${SUBDOMAIN}
+OU=${TYP}-${SUBDOMAIN}-${NAME}
+
+if [ "${TYP}" == "server" ]    
+then
+    CERT="server-${NAME}"
+else
+    if [ "${TYP}" == "client" ]
+    then
+        CERT="client-${NAME}"
+    else
+        usage
+    fi
+fi
+
+testIfRootCert
+testIfSubdomainCert ${SUBDOMAIN}
+testIfCert ${SUBDIR}/certs/${OU}.pem
+testIfCertCSRevoked ${OU}
+
+echo -e "\nRevocation de ${OU}..."
+
+echo "** Revocation du certificat..."
+
+openssl ca \
+    -config ${SUBDIR}/openssl.conf \
+    -passin file:${ROOTCRTDIR}/.passwd \
+    -name core_ca \
+    -revoke \
+    ${SUBDIR}/certs/${OU}.pem \
+    > /dev/null 2>&1
+
+echo "** Regeneration du certificat de revocation..."
+
+openssl ca \
+    -config ${SUBDIR}/openssl.conf \
+    -passin file:${ROOTCRTDIR}/.passwd \
+    -name core_ca \
+    -gencrl \
+    -keyfile ${SUBDIR}/private/${OUSD}.key \
+    -cert ${SUBDIR}/certs/${OUSD}.pem \
+    -crldays 3650 \
+    -out ${SUBDIR}/revoked.crl \
+    > /dev/null 2>&1
+
+cp ${ROOTCRTDIR}/revoked.crl ${TRUSTEDANDCRLDIR}/${SUBDOMAIN}.crl
+cat ${SUBDIR}/revoked.crl >> ${TRUSTEDANDCRLDIR}/${SUBDOMAIN}.crl
+
+echo "** Prise en compte par NGINX..."
+service nginx reload
+
+echo -e "\nCertificat revoque.\n"
+

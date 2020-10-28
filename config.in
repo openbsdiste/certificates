@@ -1,0 +1,32 @@
+#!/bin/bash
+# -----------------------------------------
+# - Gestionnaire de certifications        -
+# - (c) Libre En Poche                    -
+# - Licence GPL-v3 (voir fichier licence) -
+# -----------------------------------------
+
+# http://wiki.csnu.org/index.php/Installation_et_configuration_de_OpenSSL
+
+ROOT="/etc/nginx/certificates"
+ROOTDOMAIN="example.com"
+ROOTMAIL="address@email"
+COUNTRY="CO"
+STATE="State"
+CITY="City"
+ORGA="MyOrga"
+ORGAUNIT="MyOrgaUnit"
+PASSWD="MySuperPwd"
+EXPORTPASSWD="AnOtherPwd"
+
+# Do not edit bellow this line unless you know what you're doing !
+
+DN="/C=${COUNTRY}/ST=${STATE}/L=${CITY}/O=${ORGA}/OU="
+VERSION="0.6.2"
+ANNEE="2020"
+TRUSTEDANDCRLDIR=${ROOT}/nginxcerts
+PKCSDIR=${ROOT}/pkcs12
+PKCSUSER=www-data
+ROOTCRTDIR=${ROOT}/root
+SUBDOMAINSCRTDIR=${ROOT}/subdomains
+LOGSDIR=${ROOT}/logs
+

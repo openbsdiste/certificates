@@ -1,0 +1,92 @@
+#!/bin/bash
+# -----------------------------------------
+# - Gestionnaire de certifications        -
+# - (c) Libre En Poche                    -
+# - Licence GPL-v3 (voir fichier licence) -
+# -----------------------------------------
+
+. ./functions.inc
+
+loadConfig
+echoName
+
+function usage () {
+    echo -e "usage : $0 subdomain clientname\n"
+    exit 1
+}
+
+if [ $# -ne 2 ]
+then
+    usage
+    exit 1
+fi
+
+SUBDOMAIN=$1
+CLT=$2
+OUSD=subdomain-${SUBDOMAIN}
+OU=client-${SUBDOMAIN}-${CLT}
+SUBDIR=${SUBDOMAINSCRTDIR}/$1
+
+mkdir -p ${PKCSDIR}/$CLT
+chown ${PKCSUSER}: ${PKCSDIR}/${CLT}
+
+testRootCert
+testSubdomainCert ${SUBDOMAIN}
+testIfCertSubRevoked ${SUBDOMAIN}
+
+if [ -f "${PKCSDIR}/${CLT}/${OU}.pfx" ]
+then
+    echo -e "\nLe certificat existe deja (eventuellement revoque). Abandon.\n"
+    exit 1
+fi
+
+echo -e "\nGeneration du certificat client..."
+
+echo "** Generation du certificat..." 
+
+openssl req \
+    -config ${SUBDIR}/openssl.conf \
+    -passin file:${ROOTCRTDIR}/.passwd \
+    -passout file:${ROOTCRTDIR}/.passwd \
+    -batch \
+    -new \
+    -newkey rsa:2048 \
+    -extensions CLIENT_SSL \
+    -keyout ${SUBDIR}/private/${OU}.key \
+    -out ${SUBDIR}/req/${OU}.req \
+    -subj "${DN}${OUSD}/CN=${OU}" \
+    > ${LOGSDIR}/${OU}.log 2>&1
+
+echo "** Signature du certificat..."
+
+openssl ca \
+    -config ${SUBDIR}/openssl.conf \
+    -passin file:${ROOTCRTDIR}/.passwd \
+    -batch \
+    -name core_ca \
+    -extensions CLIENT_SSL \
+    -subj "${DN}${OUSD}/CN=${OU}" \
+    -out ${SUBDIR}/certs/${OU}.pem \
+    -in ${SUBDIR}/req/${OU}.req \
+    > ${ROOT}/logs/${OU}.log 2>&1
+
+openssl x509 \
+    -in ${SUBDIR}/certs/${OU}.pem \
+    -out ${SUBDIR}/certs/${OU}.crt
+
+echo "** Generation du pkcs12..."
+
+openssl pkcs12 \
+    -passin file:${ROOTCRTDIR}/.passwd \
+    -passout file:${ROOTCRTDIR}/.exportpasswd \
+    -export \
+    -out ${PKCSDIR}/${CLT}/${OU}.pfx \
+    -inkey ${SUBDIR}/private/${OU}.key \
+    -in ${SUBDIR}/certs/${OU}.crt \
+    -certfile ${SUBDIR}/certs/${OUSD}.pem
+
+chown ${PKCSUSER}: ${PKCSDIR}/${CLT}/${OU}.pfx
+chmod 600 ${PKCSDIR}/${CLT}/${OU}.pfx
+
+echo -e "Le certificat client est pret.\n\nLe certificat se trouve dans : ${PKCSDIR}/${CLT}/${OU}.pfx\n"
+

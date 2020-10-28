@@ -1,0 +1,101 @@
+#!/bin/bash
+# -----------------------------------------
+# - Gestionnaire de certifications        -
+# - (c) Libre En Poche                    -
+# - Licence GPL-v3 (voir fichier licence) -
+# -----------------------------------------
+
+. ./functions.inc
+
+loadConfig
+echoName
+
+if [ -f ${TRUSTEDANDCRLDIR}/trusted.pem ]
+then
+    echo -e "\nAutorite de certification deja existante... Abandon.\n"
+    exit 1
+fi
+
+echo -e "\nCreation de l'autorite de certification..."
+
+echo "** Preparation de l'environnement..."
+rm -rf ${ROOTCRTDIR} ${SUBDOMAINSCRTDIR} ${PKCSDIR} ${LOGSDIR} ${TRUSTEDANDCRLDIR} ${ROOTCRTDIR}/.passwd ${ROOTCRTDIR}/.exportpasswd
+mkdir -p ${ROOTCRTDIR}/{certs,req,newcerts,private}
+mkdir -p ${SUBDOMAINSCRTDIR}
+mkdir -p ${PKCSDIR}
+mkdir -p ${LOGSDIR}
+mkdir -p ${TRUSTEDANDCRLDIR}
+touch ${ROOTCRTDIR}/index.txt
+echo '01' > ${ROOTCRTDIR}/crlnumber
+echo -e "${PASSWD}\n${PASSWD}" > ${ROOTCRTDIR}/.passwd
+echo "${EXPORTPASSWD}" > ${ROOTCRTDIR}/.exportpasswd
+chmod 600 ${ROOTCRTDIR}/.passwd
+chmod 600 ${ROOTCRTDIR}/.exportpasswd
+chmod 600 ${ROOTCRTDIR}/private
+chown ${PKCSUSER}: ${PKCSDIR}
+
+cp openssl.conf.root.in ${ROOTCRTDIR}/openssl.conf
+sed -i "s#<ROOT>#${ROOTCRTDIR}#g" ${ROOTCRTDIR}/openssl.conf
+sed -i "s/<ROOTDOMAIN>/${ROOTDOMAIN}/g" ${ROOTCRTDIR}/openssl.conf
+sed -i "s/<ROOTMAIL>/${ROOTMAIL}/g" ${ROOTCRTDIR}/openssl.conf
+sed -i "s/<COUNTRY>/${COUNTRY}/g" ${ROOTCRTDIR}/openssl.conf
+sed -i "s/<STATE>/${STATE}/g" ${ROOTCRTDIR}/openssl.conf
+sed -i "s/<CITY>/${CITY}/g" ${ROOTCRTDIR}/openssl.conf
+sed -i "s/<ORGA>/${ORGA}/g" ${ROOTCRTDIR}/openssl.conf
+sed -i "s/<ORGAUNIT>/root/g" ${ROOTCRTDIR}/openssl.conf
+
+echo "** Generation de l'autorite racine..."
+
+openssl req \
+    -config ${ROOTCRTDIR}/openssl.conf \
+    -passin file:${ROOTCRTDIR}/.passwd \
+    -passout file:${ROOTCRTDIR}/.passwd \
+    -batch \
+    -new \
+    -newkey rsa:8192 \
+    -extensions ROOT_CA \
+    -keyout ${ROOTCRTDIR}/private/root_ca.key \
+    -out ${ROOTCRTDIR}/req/root_ca.req \
+    -subj "${DN}root/CN=root" \
+    > ${LOGSDIR}/root.log 2>&1
+
+
+echo "** Signature du certificat..."
+
+openssl ca \
+    -config ${ROOTCRTDIR}/openssl.conf \
+    -passin file:${ROOTCRTDIR}/.passwd \
+    -batch \
+    -create_serial \
+    -extensions ROOT_CA \
+    -out ${ROOTCRTDIR}/certs/root_ca.pem \
+    -selfsign \
+    -subj "${DN}root/CN=root" \
+    -keyfile ${ROOTCRTDIR}/private/root_ca.key \
+    -infiles ${ROOTCRTDIR}/req/root_ca.req \
+    >> ${LOGSDIR}/root.log 2>&1
+ 
+openssl x509 \
+    -in ${ROOTCRTDIR}/certs/root_ca.pem \
+    -out ${ROOTCRTDIR}/certs/root_ca.crt
+
+echo "** Creation du certificat de revocation..."
+
+openssl ca \
+    -passin file:${ROOTCRTDIR}/.passwd \
+    -name root_ca \
+    -config ${ROOTCRTDIR}/openssl.conf \
+    -gencrl \
+    -keyfile ${ROOTCRTDIR}/private/root_ca.key \
+    -cert ${ROOTCRTDIR}/certs/root_ca.pem \
+    -crldays 3650 \
+    -out ${ROOTCRTDIR}/revoked.crl \
+    > /dev/null 2>&1
+
+echo "** Creation de l'autorite de certification pour nginx..."
+cp ${ROOTCRTDIR}/certs/root_ca.pem ${TRUSTEDANDCRLDIR}/trusted.pem
+chmod 600 ${TRUSTEDANDCRLDIR}/trusted.pem
+
+echo -e "Fin de creation de la certification.\n\nConfiguration NGINX :"
+echo -e "    ssl_trusted_certificate ${TRUSTEDANDCRLDIR}/trusted.pem;\n"
+

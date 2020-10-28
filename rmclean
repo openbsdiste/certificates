@@ -1,0 +1,29 @@
+#!/bin/bash
+# -----------------------------------------
+# - Gestionnaire de certifications        -
+# - (c) Libre En Poche                    -
+# - Licence GPL-v3 (voir fichier licence) -
+# -----------------------------------------
+
+if [ ! -f ./config ]
+then
+    echo -e "\nMerci de creer le fichier config avant de poursuive (voir config.in pour cela).\n"
+    exit 1
+fi
+
+source ./config
+
+if [ ! -f ${TRUSTEDANDCRLDIR}/trusted.pem ]
+then
+    echo -e "\nAutorite de certification non deja existante... Abandon.\n"
+    exit 1
+fi
+
+echo -e "\nGestionnaire de certification v ${VERSION}\n(c)${ANNEE}, Libre En Poche - GPLv3"
+
+echo -e "\nSuppression de la structure de certification..."
+
+rm -rf ${ROOTCRTDIR} ${SUBDOMAINSCRTDIR} ${PKCSDIR} ${LOGSDIR} ${TRUSTEDANDCRLDIR} ${ROOTCRTDIR}/.passwd ${ROOTCRTDIR}/.exportpasswd
+
+echo -e "Fin de la suppression.\n"
+
